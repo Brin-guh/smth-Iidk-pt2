@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Chat</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #111318;
+    color: white;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.chat {
+    width: 100%;
+    max-width: 650px;
+    height: 100vh;
+    max-height: 850px;
+    display: flex;
+    flex-direction: column;
+    background: #1b1e26;
+}
+
+header {
+    padding: 16px;
+    background: #252936;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #373b49;
+}
+
+header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+#username {
+    color: #a5adff;
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+button {
+    cursor: pointer;
+    border: none;
+    border-radius: 7px;
+    padding: 10px 13px;
+    color: white;
+}
+
+#clear {
+    background: #b73545;
+}
+
+#messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.message {
+    padding: 11px 13px;
+    background: #292e3b;
+    border-radius: 10px;
+    overflow-wrap: anywhere;
+}
+
+.name {
+    font-size: 12px;
+    color: #a5adff;
+    margin-bottom: 5px;
+}
+
+.time {
+    color: #999fb0;
+    font-size: 10px;
+    margin-top: 6px;
+}
+
+#status {
+    padding: 5px 15px;
+    color: #aab0bd;
+    font-size: 12px;
+}
+
+form {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #373b49;
+}
+
+input {
+    min-width: 0;
+    flex: 1;
+    padding: 13px;
+    border-radius: 8px;
+    border: 1px solid #424859;
+    outline: none;
+    background: #111318;
+    color: white;
+}
+
+#send {
+    background: #646cff;
+}
+
+#send:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>
+</head>
+
+<body>
+<div class="chat">
+
+    <header>
+        <div>
+            <h2>💬 Shared Chat</h2>
+            <div id="username">Loading username...</div>
+        </div>
+        <button id="clear">Clear my chat</button>
+    </header>
+
+    <div id="status">Connecting to server...</div>
+    <main id="messages"></main>
+
+    <form id="form">
+        <input
+            id="input"
+            maxlength="1000"
+            placeholder="Type a message..."
+            autocomplete="off"
+            required
+        >
+        <button id="send" disabled>Send</button>
+    </form>
+
+</div>
+
+<!-- Socket.IO client -->
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+<script>
+/*
+  REPLACE THIS with your server's real URL in Step 2.
+  Example: https://your-chat-server.onrender.com
+*/
+const SERVER_URL = "https://YOUR-SERVER-URL-HERE";
+
+const username =
+    Array.from(
+        { length: 10 },
+        () => Math.floor(Math.random() * 10)
+    ).join("");
+
+document.getElementById("username").textContent =
+    "Your username: " + username;
+
+const messages = document.getElementById("messages");
+const status = document.getElementById("status");
+const input = document.getElementById("input");
+const send = document.getElementById("send");
+
+let socket = null;
+let connected = false;
+
+// Display messages safely as text, not HTML.
+function addMessage(data) {
+    const box = document.createElement("div");
+    box.className = "message";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = data.username;
+
+    const text = document.createElement("div");
+    text.textContent = data.text;
+
+    const time = document.createElement("div");
+    time.className = "time";
+    time.textContent = data.time || "";
+
+    box.append(name, text, time);
+    messages.appendChild(box);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function connect() {
+    if (!window.io) {
+        status.textContent = "Socket.IO could not load.";
+        return;
+    }
+
+    if (SERVER_URL.includes("YOUR-SERVER-URL-HERE")) {
+        status.textContent = "Please configure your server URL.";
+        return;
+    }
+
+    socket = io(SERVER_URL, {
+        transports: ["websocket", "polling"]
+    });
+
+    socket.on("connect", () => {
+        connected = true;
+        status.textContent = "Connected";
+        send.disabled = false;
+    });
+
+    socket.on("disconnect", () => {
+        connected = false;
+        status.textContent = "Disconnected. Reconnecting...";
+        send.disabled = true;
+    });
+
+    socket.on("chat history", (history) => {
+        messages.replaceChildren();
+        history.forEach(addMessage);
+    });
+
+    socket.on("chat message", (data) => {
+        addMessage(data);
+    });
+
+    socket.on("connect_error", () => {
+        status.textContent = "Connection failed. Retrying...";
+    });
+}
+
+document.getElementById("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const text = input.value.trim();
+
+    if (!text || !connected) return;
+
+    socket.emit("chat message", {
+        username,
+        text
+    });
+
+    input.value = "";
+    input.focus();
+});
+
+// Clears only this browser's visible chat.
+// It does not delete server history or affect other users.
+document.getElementById("clear").addEventListener("click", () => {
+    if (confirm("Clear the messages on your screen only?")) {
+        messages.replaceChildren();
+    }
+});
+
+connect();
+</script>
+</body>
+</html>
